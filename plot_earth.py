@@ -5,7 +5,7 @@ import platform
 import subprocess
 import os
 
-def plot_satellite(lat, lon, save_path="sat_position.png"):
+def plot_satellite(sat_lat, sat_lon, gs_lat=None, gs_lon=None, save_path="sat_position.png"):
     plt.figure(figsize=(8, 6))
     m = Basemap(projection='mill', lon_0=0)
     m.drawcoastlines()
@@ -13,10 +13,19 @@ def plot_satellite(lat, lon, save_path="sat_position.png"):
     m.fillcontinents(color='lightgray', lake_color='aqua')
     m.drawmapboundary(fill_color='aqua')
 
-    x, y = m(lon, lat)
-    m.plot(x, y, 'ro', markersize=8)  # red dot for satellite
+    # Plot satellite position (red dot)
+    x, y = m(sat_lon, sat_lat)
+    m.plot(x, y, 'ro', markersize=8, label="Satellite")
 
-    plt.title("Satellite Position on Earth")
+    # Plot ground station (green dot), if provided
+    if gs_lat is not None and gs_lon is not None:
+        xg, yg = m(gs_lon, gs_lat)
+        m.plot(xg, yg, 'go', markersize=8, label="Ground Station")
+
+    # Add legend
+    plt.legend(loc='lower left')
+
+    plt.title("Satellite and Ground Station Positions on Earth")
     plt.savefig(save_path)
     plt.close()
 
