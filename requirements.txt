@@ -1,3 +1,6 @@
 sgp4
 requests
 pymap3d
+numpy
+matplotlib
+basemap
