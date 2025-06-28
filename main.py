@@ -1,84 +1,78 @@
 # main.py
-import argparse
-import sys
+"""
+Main entry point for the satellite tracker application.
+"""
+
+import json
+from datetime import datetime, timezone
+from rich import print
 from tle import fetch_tle
 from orbit import get_position
 from plot_earth import plot_satellite, open_image
-from pymap3d import geodetic2aer
-from rich import print
-
-def get_input_or_default(prompt, default):
-    try:
-        value = input(f"{prompt} [{default}]: ").strip()
-        return float(value) if value else default
-    except ValueError:
-        print("[red]Invalid input. Using default.[/red]")
-        return default
-
-def check_visibility(sat_lat, sat_lon, sat_alt_km, gs_lat, gs_lon, gs_alt_km):
-    az, el, rng = geodetic2aer(
-        sat_lat, sat_lon, sat_alt_km * 1000,
-        gs_lat, gs_lon, gs_alt_km * 1000
-    )
-    return az, el, rng
+from visibility import check_visibility, get_orbital_period, predict_passes, get_next_pass_info
+from output import format_satellite_data, output_human_readable, output_json, get_input_or_default
+from cli import parse_arguments
 
 def main():
-    # Choose between CLI and interactive mode
-    if len(sys.argv) > 1:
-        parser = argparse.ArgumentParser(description="Track a satellite by name")
-        parser.add_argument("name", help="Satellite name (partial matches allowed)")
-        parser.add_argument("--gs-lat", type=float, default=40.0, help="Ground station latitude (degrees)")
-        parser.add_argument("--gs-lon", type=float, default=-88.0, help="Ground station longitude (degrees)")
-        parser.add_argument("--gs-alt", type=float, default=0.2, help="Ground station altitude (km)")
-        args = parser.parse_args()
-
-        sat_name = args.name
-        gs_lat = args.gs_lat
-        gs_lon = args.gs_lon
-        gs_alt = args.gs_alt
-    else:
-        print("[bold cyan]Satellite Tracker — Interactive Mode[/bold cyan]")
-        sat_name = input("Enter satellite name (e.g. starlink, ISS): ").strip()
-        gs_lat = get_input_or_default("Ground station latitude", 40.0)
-        gs_lon = get_input_or_default("Ground station longitude", -88.0)
-        gs_alt = get_input_or_default("Ground station altitude (km)", 0.2)
-
+    # Parse command line arguments or get interactive input
+    config = parse_arguments()
+    
     try:
-        print("[bold green]Tracking satellite position and visibility...[/bold green]")
+        if not config["json_output"]:
+            print("[bold green]Tracking satellite position and visibility...[/bold green]")
 
         # Fetch TLE and compute satellite position
-        line1, line2 = fetch_tle(sat_name)
+        line1, line2 = fetch_tle(config["sat_name"])
         pos = get_position(line1, line2)
-
-        print(f"Latitude:  [cyan]{pos['lat']:.4f}°[/cyan]")
-        print(f"Longitude: [cyan]{pos['lon']:.4f}°[/cyan]")
-        print(f"Altitude:  [cyan]{pos['alt_km']:.2f} km[/cyan]")
-        print(f"Velocity:  [cyan]{pos['velocity_kms']:.2f} km/s[/cyan]")
-
-        # Plot Earth map with satellite + ground station
-        plot_satellite(pos['lat'], pos['lon'], gs_lat, gs_lon)
-        print("Satellite position map saved as [bold]sat_position.png[/bold]")
 
         # Compute visibility from ground station
         az, el, rng = check_visibility(
             pos['lat'], pos['lon'], pos['alt_km'],
-            gs_lat, gs_lon, gs_alt
+            config["gs_lat"], config["gs_lon"], config["gs_alt"]
         )
 
-        print(f"Azimuth:   [yellow]{az:.2f}°[/yellow]")
-        print(f"Elevation: [yellow]{el:.2f}°[/yellow]")
-        print(f"Range:     [yellow]{rng / 1000:.2f} km[/yellow]")
+        # Calculate orbital period
+        orbital_period_minutes = get_orbital_period(line1, line2)
 
-        if el > 0:
-            print("[green bold]Satellite is currently visible from your ground station.[/green bold]")
+        # Predict passes
+        passes = predict_passes(line1, line2, config["gs_lat"], config["gs_lon"], config["gs_alt"], 
+                              hours_ahead=config["hours_ahead"], min_elevation=config["min_elevation"])
+
+        # Get next pass information
+        next_pass_info = get_next_pass_info(passes)
+
+        # Format the data
+        result = format_satellite_data(
+            config["sat_name"], pos, config["gs_lat"], config["gs_lon"], config["gs_alt"],
+            az, el, rng, orbital_period_minutes, passes, next_pass_info,
+            config["hours_ahead"], config["min_elevation"]
+        )
+
+        # Output results
+        if config["json_output"]:
+            output_json(result)
         else:
-            print("[red bold]Satellite is NOT currently visible from your ground station.[/red bold]")
-
-        # Open the image
-        open_image("sat_position.png")
+            output_human_readable(result, config["create_plot"])
+            
+            # Create and display the satellite position plot
+            if config["create_plot"]:
+                plot_satellite(pos['lat'], pos['lon'], config["gs_lat"], config["gs_lon"],
+                             line1=line1, line2=line2, 
+                             show_orbit=config["show_orbit"], 
+                             show_visibility=config["show_visibility"],
+                             min_elevation=config["min_elevation"])
+                print("Satellite position map saved as [bold]sat_position.png[/bold]")
+                open_image("sat_position.png")
 
     except Exception as e:
-        print(f"[bold red]Error:[/bold red] {e}")
+        if config["json_output"]:
+            error_result = {
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
+            }
+            print(json.dumps(error_result, indent=2))
+        else:
+            print(f"[bold red]Error:[/bold red] {e}")
 
 if __name__ == "__main__":
     main()

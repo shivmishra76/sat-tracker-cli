@@ -4,3 +4,4 @@ pymap3d
 numpy
 matplotlib
 basemap
+rich
