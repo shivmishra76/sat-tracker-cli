@@ -40,7 +40,7 @@ def plot_satellite(sat_lat, sat_lon, gs_lat=None, gs_lon=None, save_path="sat_po
         try:
             orbit_lats, orbit_lons = calculate_orbit_path(line1, line2)
             # Handle longitude wrapping for better visualization
-            orbit_x, orbit_y = m(orbit_lons, orbit_lats)
+            orbit_x, orbit_y = handle_longitude_wrapping(m, orbit_lons, orbit_lats)
             m.plot(orbit_x, orbit_y, 'b-', linewidth=2, alpha=0.7, label="Satellite Orbit")
         except Exception as e:
             print(f"[yellow]Warning: Could not plot orbit: {e}[/yellow]")
@@ -85,14 +85,14 @@ def open_image(path):
     else:
         subprocess.run(['xdg-open', path])
 
-def calculate_orbit_path(line1, line2, hours=1.5, points=100):
+def calculate_orbit_path(line1, line2, hours=2.0, points=200):
     """
     Calculate satellite orbit path for visualization.
     
     Args:
         line1, line2: TLE lines
-        hours: How many hours of orbit to calculate
-        points: Number of points along the orbit
+        hours: How many hours of orbit to calculate (increased for more complete orbit)
+        points: Number of points along the orbit (increased for smoother curves)
     
     Returns:
         tuple: (latitudes, longitudes) arrays
@@ -165,3 +165,31 @@ def calculate_visibility_circle(gs_lat, gs_lon, min_elevation=10.0, earth_radius
         circle_lons.append(np.degrees(new_lon))
     
     return np.array(circle_lats), np.array(circle_lons)
+
+def handle_longitude_wrapping(m, lons, lats):
+    """
+    Handle longitude wrapping to avoid straight lines across the map.
+    
+    Args:
+        m: Basemap object
+        lons, lats: Arrays of longitudes and latitudes
+    
+    Returns:
+        tuple: (x, y) coordinates for plotting
+    """
+    x_coords, y_coords = [], []
+    
+    for i in range(len(lons)):
+        if i > 0:
+            # Check for longitude wrapping (crossing 180/-180 boundary)
+            lon_diff = abs(lons[i] - lons[i-1])
+            if lon_diff > 180:
+                # Add a break in the line by inserting NaN
+                x_coords.append(np.nan)
+                y_coords.append(np.nan)
+        
+        x, y = m(lons[i], lats[i])
+        x_coords.append(x)
+        y_coords.append(y)
+    
+    return np.array(x_coords), np.array(y_coords)
