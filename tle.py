@@ -1,14 +1,34 @@
 # tle.py
+
 import requests
+import os
+import time
 
 CELESTRAK_URL = "https://celestrak.com/NORAD/elements/gp.php?GROUP=active&FORMAT=tle"
 
 def fetch_tle(name):
-    response = requests.get(CELESTRAK_URL)
-    if response.status_code != 200:
-        raise RuntimeError(f"Failed to fetch TLEs: {response.status_code}")
+    cache_file = "tle_cache.txt"
+    cache_lifetime = 2 * 60 * 60  # 2 hours in seconds
+    now = time.time()
 
-    lines = response.text.strip().split("\n")
+    use_cache = False
+    if os.path.exists(cache_file):
+        cache_age = now - os.path.getmtime(cache_file)
+        if cache_age < cache_lifetime:
+            use_cache = True
+
+    if use_cache:
+        with open(cache_file, "r") as f:
+            tle_data = f.read()
+    else:
+        response = requests.get(CELESTRAK_URL)
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to fetch TLEs: {response.status_code}")
+        tle_data = response.text
+        with open(cache_file, "w") as f:
+            f.write(tle_data)
+
+    lines = tle_data.strip().split("\n")
     name = name.lower()
 
     matches = []
