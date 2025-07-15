@@ -23,6 +23,11 @@ def fetch_tle(name):
     if len(matches) == 1:
         return matches[0][1], matches[0][2]
 
+    import sys
+    # If running in JSON mode (detected by --json in sys.argv), pick the first match automatically
+    if any(arg == '--json' for arg in sys.argv):
+        return matches[0][1], matches[0][2]
+
     print("Multiple matches found:")
     for idx, (sat_name, _, _) in enumerate(matches[:10]):  # show top 10
         print(f"{idx + 1}. {sat_name}")
